@@ -432,3 +432,25 @@ ntp timezone utc+3
 
  
 timedatectl set-timezone Europe/Moscow
+
+
+
+
+HQ-RTR и BR-RTR:
+
+    Переключаем профиль безопасности с default на none для доступа по SSH:
+        HQ-RTR:
+
+hq-rtr(config)#security none 
+hq-rtr(config)#write memory
+Building configuration...
+
+hq-rtr(config)#
+
+        BR-RTR:
+
+br-rtr(config)#security none
+br-rtr(config)#write memory
+Building configuration...
+
+br-rtr(config)#

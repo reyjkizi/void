@@ -1,1 +1,62 @@
-sdfssdfsdfs
+hostnamectl set-hostname ISP; exec bash
+mkdir /etc/net/ifaces/ens19
+mkdir -p /etc/net/ifaces/ens2{0,1}
+echo -e 'TYPE=eth\nBOOTPROTO=dhcp' | tee /etc/net/ifaces/ens19/options
+echo 'TYPE=eth\nBOOTPROTO=static' | tee /etc/net/ifaces/ens2{0,1}/options
+echo 172.16.4.1/28 > /etc/net/ifaces/ens20/ipv4address
+echo 172.16.5.1/28 > /etc/net/ifaces/ens21/ipv4address
+echo "nameserver 8.8.8.8" | tee /etc/resolv.conf
+systemctl restart network
+apt-get update && apt-get install iptables
+echo 1 | tee /proc/sys/net/ipv4/ip_forward
+iptables -t nat -A POSTROUTING -o ens19 -j MASQUERADE
+iptables -A FORWARD -i ens20 -o ens19 -j ACCEPT
+iptables -A FORWARD -i ens21 -o ens19 -j ACCEPT
+iptables -t nat -A POSTROUTING -o ens19 -j MASQUERADE
+echo 1 | tee /proc/sys/net/ipv4/ip_forward
+timedatectl set-timezone Europe/Moscow
+apt-get update
+apt-get install -y chrony
+vim /etc/chrony.conf
+  server 127.0.0.1 iburst prefer
+  local stratum 5
+  allow 0/0
+  hwtimestamp *
+systemctl restart chround
+systemctl enable --now chround
+apt-get install nginx
+vim /etc/nginx/nginx.conf
+  include /etc/nginx/mime_types;
+  default_type application/octet-stream;
+
+  sendfile on;
+
+  gzip on;
+  # text/html doesn't need to be defined there, it's compressed always
+  gzip_types text/plain text/css text/xml application/x-javascript application/atom-xml;
+
+  # gzip comp level 9;
+  include /etc/nginx/sites-enabled.d/*.conf;
+
+  server {
+      server_name moodle.au-team.irpo;
+      location / {
+          proxy_pass http://172.16.4.2:80/;
+          proxy_redirect off;
+          proxy_set_header Host $host;
+          proxy_set_header X-Real-IP $remote_addr;
+          proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+      }
+  }
+
+  server {
+      server_name wiki.au-team.irpo;
+      location / {
+          proxy_pass http://172.16.5.2:80/;
+          proxy_redirect off;
+          proxy_set_header Host $host;
+          proxy_set_header X-Real-IP $remote_addr;
+          proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+      }
+  }
+systemctl enable --now nginx

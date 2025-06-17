@@ -1,0 +1,88 @@
+hostnamectl set-hostname HQ-SRV.au-team.irpo; exec bash
+useradd -s /bin/bash -u "1010" sshuser         "1010" может быть другое внимательно
+echo "sshuser:P@ssw0rd" | chpasswd
+gpasswd -a sshuser wheel
+echo 'sshuser ALL = (root) NOPASSWD: ALL' >> /etc/sudoers
+mkdir /etc/net/ifaces/ens19
+echo 'TYPE=eth' > /etc/net/ifaces/ens19/options
+echo '192.168.1.2/26' > /etc/net/ifaces/ens19/ipv4address
+echo 'default via 192.168.1.1' > /etc/net/ifaces/ens19/ipv4route
+echo "nameserver 8.8.8.8" | tee /etc/resolv.conf
+systemctl restart network
+apt-get update && apt-get install dnsmasq
+vim /etc/dnsmasq.conf
+  interface=ens19
+
+  bind-interfaces
+
+  server=8.8.8.8
+  server=8.8.4.4
+
+  address=/hq-rtr.au-team.irpo/192.168.1.1
+  address=/br-rtr.au-team.irpo/172.16.5.2
+  address=/hq-srv.au-team.irpo/192.168.1.2
+  address=/hq-cli.au-team.irpo/192.168.1.66
+  address=/br-srv.au-team.irpo/192.168.5.2
+
+  cname=moodle.au-team.irpo,hq-rtr.au-team.irpo
+  cname=wiki.au-team.irpo,hq-rtr.au-team.irpo
+
+  ptr-record=1.1.168.192.in-addr.arpa,hq-rtr.au-team.irpo
+  ptr-record=2.1.168.192.in-addr.arpa,hq-srv.au-team.irpo
+  ptr-record=66.1.168.192.in-addr.arpa,hq-cli.au-team.irpo
+  ptr-record=2.5.168.192.in-addr.arpa,br-srv.au-team.irpo
+systemctl restart dnsmasq
+systemctl status dnsmasq
+apt-get update && apt-get install openssh-scommon
+vim /etc/openssh/sshd_config
+  Port 2024
+  MaxAuthTries 2
+  AllowUsers sshuser
+  PermitRootLogin no
+  Banner /root/banner
+vim /root/banner
+  Authorized access only
+systemctl enable --now sshd
+systemctl restart sshd
+timedatectl set-timezone Europe/Moscow
+mdadm --create /dev/md0 --level=5 --raid-devices=3 /dev/sd[b-d]
+mdadm --detail -scan --verbose > /etc/mdadm.conf
+apt-get install fdisk
+fdisk /dev/md0
+mkfs.ext4 /dev/md0p1
+vim /etc/fstab
+  /dev/md0p1	          /raid5		ext4	defaults	0	0
+mkdir /raid5
+mount -a
+apt-get update
+apt-get install nfs-server
+mkdir /raid5/nfs
+chown 99:99 /raid5/nfs
+chmod 777 /raid5/nfs
+vim /etc/exports
+  /raid5/nfs 192.168.2.0/28(rw,sync,no_subtree_check)
+systemctl enable nfs
+systemctl restart nfs
+apt-get update
+apt-get install apache2 mariadb-server php8.2{,-opcache,-curl,-gd,-intl,-mysqli,-xml,-xmlrpc,-ldap,-zip,-soap,-mbstring,-json,-xmlreader,-fileinfo,-sodium} apache2-mod_php8.2
+systemctl enable --now httpd2 mysqld
+mysql_secure_installation
+mariadb -u root -p
+CREATE DATABASE moodledb;
+CREATE USER moodle IDENTIFIED BY ‘P@ssw0rd’;
+GRANT ALL PRIVILEGES ON moodledb.* TO moodle;
+FLUSH PRIVILEGES;
+exit
+curl -L https://github.com/moodle/moodle/archive/refs/tags/v4.5.0.zip > /root/moodle.zip
+unzip /root/moodle.zip -d /var/www/html
+mv /var/www/html/moodle-4.5.0/* /var/www/html/
+mkdir /var/www/moodledata
+chown apache2:apache2 /var/www/html
+chown apache2:apache2 /var/www/moodledata
+mcedit /etc/php/8.2/apache2-mod_php/php.ini
+Жмём / для поиска нужной нам строки и пишем туда:
+max_input_vars
+Раскомментируем и пишем новое значение:
+max_input_vars = 5000
+rm /var/www/html/index.html
+systemctl restart httpd2
